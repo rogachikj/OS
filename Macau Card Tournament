@@ -1,0 +1,156 @@
+/*
+Потребно е да направите сценарио за синхронизација на турнир во макао за двојки, каде победникот се избира по 3 одиграни партии.
+
+На турнирот се натпреваруваат зелена со црвена група, каде во секоја од групите има по 30 учесници.
+
+Потребно е да го синхронизирате турнирот на следниот начин:
+
+По стартувањето на играчите во позадина, тие најпрво треба да испечатат {Red|Green} player ready
+На масата може да седнат по 2 играчи од двете групи. По влегувањето треба да испечатат {Red|Geen} player here
+Доколку влезат повеќе од 2 играчи од некоја од групте, сценариото е невалидно
+Откако ќе седнат четирите играчи на масата, треба истовремено да започнат со играта со печатење на Game {num} started и повикување на Thread.sleep(200)
+Треба да се повика истовремено и паралелно да се повика кај сите играчи.
+Откако ќе заврши Thread.sleep кај сите играчи сите печатат {Red|Green} player finished game {num}.
+Потоа само еден играч печати Game {num} finished и сигнализира дека може да започне наредната партија од игра.
+По завршувањето на трите партии (игри), само еден играч сигнализира Match finished.
+Потребно е да имплементирате сценарио во кое во main методот ќе се стартуваат по 30 инстанци од класите Greenplayer и Redplayer кои ќе се однесуваат како Threads и во позадина секоја ќе знае да изигра три партии од играта според претходно опишаното сценарио. Откако сите играчи ќе се стартуваат, треба за секој од нив да се почека да заврши за максимум 1 секунда (1000 ms). Потоа треба да се провери дали сите инстанци се завршени со позадинското извршување. Доколку некоја инстанца не е завршена, потребно е истата да се терминира и да се испечати пораката: Possible deadlock.
+
+Имплементацијата на сценариото треба да се направи во execute методите, кои треба да се стартуваат во позадина.
+*/
+
+import java.util.HashSet;
+import java.util.concurrent.Semaphore;
+
+public class MacauCardTournament {
+
+    public static void main(String[] args) throws InterruptedException {
+        HashSet<Thread> threads = new HashSet<Thread>();
+        for (int i = 0; i < 30; i++) {
+            RedPlayer red = new RedPlayer();
+            threads.add(red);
+            GreenPlayer green = new GreenPlayer();
+            threads.add(green);
+        }
+
+        // start 30 red and 30 green players in background
+        for(Thread t : threads)
+            t.start();
+
+        // after all of them are started, wait each of them to finish for 1_000 ms
+        for(Thread t : threads)
+            t.join(1_000);
+
+        // after the waiting for each of the players is done, check the one that are not finished and terminate them
+        for(Thread t : threads){
+            if(t.isAlive()){
+                t.interrupt();
+                System.err.println("Possible deadlock");
+            }
+        }
+    }
+
+    public static Semaphore greenTeam = new Semaphore(2);
+    public static Semaphore redTeam = new Semaphore(2);
+    public static Semaphore greenTeamHere = new Semaphore(0);
+    public static Semaphore allowStart = new Semaphore(0);
+    public static Semaphore allowEnd = new Semaphore(0);
+    public static Semaphore lock = new Semaphore(1);
+    public static int redPlayersNum = 0;
+
+    public static class GreenPlayer extends Thread {
+
+        public void run(){
+            try{
+                execute();
+            }catch (InterruptedException e){
+                e.printStackTrace();
+            }
+        }
+
+        public void execute() throws InterruptedException {
+
+            greenTeam.acquire();
+            System.out.println("Green player ready");
+            Thread.sleep(50);
+            System.out.println("Green player here");
+            greenTeamHere.release();
+
+            for(int num = 1; num <= 3; num++) {
+                allowStart.acquire();
+                System.out.println("Game " + num + " started");
+                Thread.sleep(200);
+                greenTeamHere.release();
+                allowEnd.acquire();
+                System.out.println("Green player finished game " + num);
+                greenTeamHere.release();
+            }
+        }
+
+    }
+
+    public static class RedPlayer extends Thread {
+
+        public void run(){
+            try{
+                execute();
+            }catch (InterruptedException e){
+                e.printStackTrace();
+            }
+        }
+
+        public void execute() throws InterruptedException {
+
+            redTeam.acquire();
+            System.out.println("Red player ready");
+            Thread.sleep(50);
+            System.out.println("Red player here");
+
+            lock.acquire();
+            redPlayersNum++;
+            if(redPlayersNum == 2) {
+                greenTeamHere.acquire(2);
+                allowStart.release(4);
+                redPlayersNum = 0;
+            }
+            lock.release();
+
+            for(int num = 1; num <= 3; num++) {
+                allowStart.acquire();
+                System.out.println("Game " + num + " started");
+                Thread.sleep(200);
+
+                lock.acquire();
+                redPlayersNum++;
+                if(redPlayersNum == 2){
+                    greenTeamHere.acquire(2);
+                    allowEnd.release(4);
+                    redPlayersNum = 0;
+                }
+                lock.release();
+
+                allowEnd.acquire();
+                System.out.println("Red player finished game " + num);
+
+                lock.acquire();
+                redPlayersNum++;
+                if(redPlayersNum == 2)
+                    greenTeamHere.acquire(2);
+                lock.release();
+
+                if(redPlayersNum == 2 && num != 3) {
+                    System.out.println("Game " + num + " finished");
+                    allowStart.release(4);
+                    redPlayersNum = 0;
+                } else if (redPlayersNum == 2 && num == 3) {
+                    System.out.println("Game " + num + " finished");
+                    System.out.println("Match finished");
+                    redPlayersNum = 0;
+                    redTeam.release(2);
+                    greenTeam.release(2);
+                }
+            }
+        }
+
+    }
+
+}
