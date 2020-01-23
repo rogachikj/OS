@@ -65,7 +65,7 @@ public class CriminalTransport {
     public static Semaphore lock = new Semaphore(1);
     public static Semaphore allowSit = new Semaphore(4);
     public static Semaphore allowCriminals = new Semaphore(2);
-    public static Semaphore allowPoliceMen = new Semaphore(3);
+    public static Semaphore allowPoliceMen = new Semaphore(2);
     public static Semaphore allowDriving = new Semaphore(0);
     public static Semaphore allowExit = new Semaphore(0);
     public static boolean flag = true;
